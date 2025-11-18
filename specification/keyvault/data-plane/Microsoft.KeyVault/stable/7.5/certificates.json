@@ -219,7 +219,8 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/CertificateUpdateParameters"
-            }
+            },
+            "x-ms-client-flatten": true
           }
         ],
         "responses": {
@@ -307,7 +308,8 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/CertificateCreateParameters"
-            }
+            },
+            "x-ms-client-flatten": true
           }
         ],
         "responses": {
@@ -356,7 +358,8 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/CertificateImportParameters"
-            }
+            },
+            "x-ms-client-flatten": true
           }
         ],
         "responses": {
@@ -441,7 +444,8 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/CertificateOperationUpdateParameter"
-            }
+            },
+            "x-ms-client-flatten": true
           }
         ],
         "responses": {
@@ -526,7 +530,8 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/CertificateMergeParameters"
-            }
+            },
+            "x-ms-client-flatten": true
           }
         ],
         "responses": {
@@ -890,7 +895,8 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/CertificateIssuerSetParameters"
-            }
+            },
+            "x-ms-client-flatten": true
           }
         ],
         "responses": {
@@ -936,7 +942,8 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/CertificateIssuerUpdateParameters"
-            }
+            },
+            "x-ms-client-flatten": true
           }
         ],
         "responses": {
@@ -1013,7 +1020,8 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/CertificateRestoreParameters"
-            }
+            },
+            "x-ms-client-flatten": true
           }
         ],
         "responses": {
@@ -1365,7 +1373,7 @@
         },
         "contentType": {
           "type": "string",
-          "description": "The content type of the secret. eg. 'application/x-pem-file' or 'application/x-pkcs12',"
+          "description": "The content type of the secret. eg. 'application/x-pem-file' or 'application/x-pkcs12'."
         },
         "attributes": {
           "$ref": "#/definitions/CertificateAttributes",
@@ -1373,7 +1381,7 @@
         },
         "tags": {
           "type": "object",
-          "description": "Application specific metadata in the form of key-value pairs",
+          "description": "Application specific metadata in the form of key-value pairs.",
           "additionalProperties": {
             "type": "string"
           }
@@ -1835,7 +1843,7 @@
         },
         "contentType": {
           "type": "string",
-          "description": "The content type of the secret. eg. 'application/x-pem-file' or 'application/x-pkcs12',"
+          "description": "The content type of the secret. eg. 'application/x-pem-file' or 'application/x-pkcs12'."
         },
         "attributes": {
           "$ref": "#/definitions/CertificateAttributes",
@@ -1843,7 +1851,7 @@
         },
         "tags": {
           "type": "object",
-          "description": "Application specific metadata in the form of key-value pairs",
+          "description": "Application specific metadata in the form of key-value pairs.",
           "additionalProperties": {
             "type": "string"
           }
@@ -2335,7 +2343,7 @@
     },
     "SubjectAlternativeNames": {
       "type": "object",
-      "description": "The subject alternate names of a X509 object.",
+      "description": "The Subject Alternative Names of a X509 object.",
       "properties": {
         "emails": {
           "type": "array",
@@ -2346,7 +2354,7 @@
         },
         "dns_names": {
           "type": "array",
-          "description": "Domain names.",
+          "description": "Domain Names.",
           "items": {
             "type": "string"
           },
@@ -2354,7 +2362,7 @@
         },
         "upns": {
           "type": "array",
-          "description": "User principal names.",
+          "description": "User Principal Names.",
           "items": {
             "type": "string"
           }

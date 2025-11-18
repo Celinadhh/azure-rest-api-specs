@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { CommitStatusState } from "../../shared/src/github.js";
 import { getLabelActionImpl } from "../src/arm-auto-signoff.js";
 import { LabelAction } from "../src/label.js";
-import {
-  createMockCore,
-  createMockGithub as createMockGithubBase,
-} from "./mocks.js";
+import { createMockCore, createMockGithub as createMockGithubBase } from "./mocks.js";
 
 const core = createMockCore();
 
@@ -45,7 +43,9 @@ function createMockGithub({ incrementalTypeSpec }) {
 
 describe("getLabelActionImpl", () => {
   it("throws if inputs null", async () => {
-    await expect(getLabelActionImpl({})).rejects.toThrow();
+    await expect(
+      getLabelActionImpl(/** @type {Parameters<typeof getLabelActionImpl>[0]} */ ({})),
+    ).rejects.toThrow();
   });
 
   it("throws if no artifact from incremental typespec", async () => {
@@ -81,7 +81,7 @@ describe("getLabelActionImpl", () => {
         github: github,
         core: core,
       }),
-    ).resolves.toEqual({ labelAction: LabelAction.None, issueNumber: 123 });
+    ).resolves.toEqual({ labelAction: LabelAction.None, headSha: "abc123", issueNumber: 123 });
   });
 
   it("removes label if not incremental typespec", async () => {
@@ -99,7 +99,7 @@ describe("getLabelActionImpl", () => {
         github: github,
         core: core,
       }),
-    ).resolves.toEqual({ labelAction: LabelAction.Remove, issueNumber: 123 });
+    ).resolves.toEqual({ labelAction: LabelAction.Remove, headSha: "abc123", issueNumber: 123 });
   });
 
   it("no-ops if incremental typespec in progress", async () => {
@@ -126,7 +126,7 @@ describe("getLabelActionImpl", () => {
         github: github,
         core: core,
       }),
-    ).resolves.toEqual({ labelAction: LabelAction.None, issueNumber: 123 });
+    ).resolves.toEqual({ labelAction: LabelAction.None, headSha: "abc123", issueNumber: 123 });
   });
 
   it("removes label if no runs of incremental typespec", async () => {
@@ -149,7 +149,7 @@ describe("getLabelActionImpl", () => {
         github: github,
         core: core,
       }),
-    ).resolves.toEqual({ labelAction: LabelAction.Remove, issueNumber: 123 });
+    ).resolves.toEqual({ labelAction: LabelAction.Remove, headSha: "abc123", issueNumber: 123 });
   });
 
   it("uses latest run of incremental typespec", async () => {
@@ -187,7 +187,7 @@ describe("getLabelActionImpl", () => {
         github: github,
         core: core,
       }),
-    ).resolves.toEqual({ labelAction: LabelAction.Remove, issueNumber: 123 });
+    ).resolves.toEqual({ labelAction: LabelAction.Remove, headSha: "abc123", issueNumber: 123 });
   });
 
   it.each([
@@ -210,7 +210,7 @@ describe("getLabelActionImpl", () => {
         github: github,
         core: core,
       }),
-    ).resolves.toEqual({ labelAction: LabelAction.Remove, issueNumber: 123 });
+    ).resolves.toEqual({ labelAction: LabelAction.Remove, headSha: "abc123", issueNumber: 123 });
   });
 
   it.each(["Swagger Avocado", "Swagger LintDiff"])(
@@ -221,16 +221,13 @@ describe("getLabelActionImpl", () => {
       github.rest.issues.listLabelsOnIssue.mockResolvedValue({
         data: [{ name: "ARMAutoSignedOff" }, { name: "ARMReview" }],
       });
-      github.rest.checks.listForRef.mockResolvedValue({
-        data: {
-          check_runs: [
-            {
-              name: check,
-              status: "completed",
-              conclusion: "failure",
-            },
-          ],
-        },
+      github.rest.repos.listCommitStatusesForRef.mockResolvedValue({
+        data: [
+          {
+            context: check,
+            state: CommitStatusState.FAILURE,
+          },
+        ],
       });
 
       await expect(
@@ -242,33 +239,58 @@ describe("getLabelActionImpl", () => {
           github: github,
           core: core,
         }),
-      ).resolves.toEqual({ labelAction: LabelAction.Remove, issueNumber: 123 });
+      ).resolves.toEqual({ labelAction: LabelAction.Remove, headSha: "abc123", issueNumber: 123 });
     },
   );
 
-  it("thows if multiple runs for same check", async () => {
+  it.each([
+    [CommitStatusState.ERROR, ["ARMReview", "ARMAutoSignedOff"]],
+    [CommitStatusState.FAILURE, ["ARMReview", "ARMAutoSignedOff"]],
+    [CommitStatusState.PENDING, ["ARMReview"]],
+    [CommitStatusState.SUCCESS, ["ARMReview"]],
+  ])("uses latest status if multiple (%o)", async (state, labels) => {
     const github = createMockGithub({ incrementalTypeSpec: true });
 
     github.rest.issues.listLabelsOnIssue.mockResolvedValue({
-      data: [{ name: "ARMReview" }],
+      data: labels.map((l) => ({
+        name: l,
+      })),
     });
 
-    github.rest.checks.listForRef.mockResolvedValue({
-      data: {
-        check_runs: [
-          {
-            name: "Swagger LintDiff",
-            status: "in_progress",
-            conclusion: null,
-          },
-          {
-            name: "Swagger LintDiff",
-            status: "in_progress",
-            conclusion: null,
-          },
-        ],
-      },
+    github.rest.repos.listCommitStatusesForRef.mockResolvedValue({
+      data: [
+        {
+          context: "Swagger Avocado",
+          state: CommitStatusState.SUCCESS,
+          updated_at: "2025-01-01",
+        },
+        {
+          context: "Swagger LintDiff",
+          state: CommitStatusState.PENDING,
+          updated_at: "2025-01-01",
+        },
+        {
+          context: "Swagger LintDiff",
+          state,
+          updated_at: "2025-01-02",
+        },
+      ],
     });
+
+    let expectedAction;
+    switch (state) {
+      case CommitStatusState.ERROR:
+      case CommitStatusState.FAILURE:
+        expectedAction = LabelAction.Remove;
+        break;
+      case CommitStatusState.SUCCESS:
+        expectedAction = LabelAction.Add;
+        break;
+      case CommitStatusState.PENDING:
+        expectedAction = LabelAction.None;
+        break;
+    }
+
     await expect(
       getLabelActionImpl({
         owner: "TestOwner",
@@ -278,7 +300,7 @@ describe("getLabelActionImpl", () => {
         github: github,
         core: core,
       }),
-    ).rejects.toThrow();
+    ).resolves.toEqual({ labelAction: expectedAction, headSha: "abc123", issueNumber: 123 });
   });
 
   it("no-ops if check not found or not completed", async () => {
@@ -288,10 +310,8 @@ describe("getLabelActionImpl", () => {
       data: [{ name: "ARMReview" }],
     });
 
-    github.rest.checks.listForRef.mockResolvedValue({
-      data: {
-        check_runs: [],
-      },
+    github.rest.repos.listCommitStatusesForRef.mockResolvedValue({
+      data: [],
     });
     await expect(
       getLabelActionImpl({
@@ -302,18 +322,10 @@ describe("getLabelActionImpl", () => {
         github: github,
         core: core,
       }),
-    ).resolves.toEqual({ labelAction: LabelAction.None, issueNumber: 123 });
+    ).resolves.toEqual({ labelAction: LabelAction.None, headSha: "abc123", issueNumber: 123 });
 
-    github.rest.checks.listForRef.mockResolvedValue({
-      data: {
-        check_runs: [
-          {
-            name: "Swagger LintDiff",
-            status: "in_progress",
-            conclusion: null,
-          },
-        ],
-      },
+    github.rest.repos.listCommitStatusesForRef.mockResolvedValue({
+      data: [{ context: "Swagger LintDiff", state: CommitStatusState.PENDING }],
     });
     await expect(
       getLabelActionImpl({
@@ -324,7 +336,7 @@ describe("getLabelActionImpl", () => {
         github: github,
         core: core,
       }),
-    ).resolves.toEqual({ labelAction: LabelAction.None, issueNumber: 123 });
+    ).resolves.toEqual({ labelAction: LabelAction.None, headSha: "abc123", issueNumber: 123 });
   });
 
   it("adds label if incremental tsp, labels match, and check succeeded", async () => {
@@ -333,21 +345,17 @@ describe("getLabelActionImpl", () => {
     github.rest.issues.listLabelsOnIssue.mockResolvedValue({
       data: [{ name: "ARMReview" }],
     });
-    github.rest.checks.listForRef.mockResolvedValue({
-      data: {
-        check_runs: [
-          {
-            name: "Swagger LintDiff",
-            status: "completed",
-            conclusion: "success",
-          },
-          {
-            name: "Swagger Avocado",
-            status: "completed",
-            conclusion: "success",
-          },
-        ],
-      },
+    github.rest.repos.listCommitStatusesForRef.mockResolvedValue({
+      data: [
+        {
+          context: "Swagger LintDiff",
+          state: CommitStatusState.SUCCESS,
+        },
+        {
+          context: "Swagger Avocado",
+          state: CommitStatusState.SUCCESS,
+        },
+      ],
     });
 
     await expect(
@@ -359,6 +367,6 @@ describe("getLabelActionImpl", () => {
         github: github,
         core: core,
       }),
-    ).resolves.toEqual({ labelAction: LabelAction.Add, issueNumber: 123 });
+    ).resolves.toEqual({ labelAction: LabelAction.Add, headSha: "abc123", issueNumber: 123 });
   });
 });

@@ -1,5 +1,3 @@
-// @ts-check
-
 import child_process from "child_process";
 import { dirname, join } from "path";
 import { promisify } from "util";
@@ -38,7 +36,7 @@ export function isExecError(error) {
  * Wraps `child_process.execFile()`, adding logging and a larger default maxBuffer.
  *
  * @param {string} file
- * @param {string[]} args
+ * @param {string[]} [args]
  * @param {ExecOptions} [options]
  * @returns {Promise<ExecResult>}
  * @throws {ExecError}
@@ -101,13 +99,7 @@ export async function execNpm(args, options = {}) {
           // example: "C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js"
           defaultArgs: [
             "--",
-            join(
-              dirname(process.execPath),
-              "node_modules",
-              "npm",
-              "bin",
-              "npm-cli.js",
-            ),
+            join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
           ],
         }
       : { file: "npm", defaultArgs: [] };

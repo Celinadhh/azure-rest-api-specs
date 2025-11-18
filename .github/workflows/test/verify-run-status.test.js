@@ -1,14 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
-import {
-  createMockGithub,
-  createMockContext,
-  createMockCore,
-} from "./mocks.js";
-import {
-  getCheckRuns,
-  getWorkflowRuns,
-  verifyRunStatusImpl,
-} from "../src/verify-run-status.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { verifyRunStatusImpl as verifyRunStatusImplSrc } from "../src/verify-run-status.js";
+import { createMockCore, createMockGithub } from "./mocks.js";
 
 vi.mock("../src/context.js", () => {
   return {
@@ -18,218 +10,59 @@ vi.mock("../src/context.js", () => {
   };
 });
 
-describe("getCheckRuns", () => {
-  it("returns matching check_run", async () => {
-    const githubMock = createMockGithub();
-    githubMock.rest.checks.listForRef = vi.fn().mockResolvedValue({
-      data: {
-        check_runs: [
-          {
-            name: "checkRunName",
-            status: "completed",
-            conclusion: "success",
-          },
-        ],
-      },
-    });
-
-    const actual = await getCheckRuns(
-      githubMock,
-      createMockContext(),
-      createMockCore(),
-      "checkRunName",
-      "head_sha",
-    );
-
-    expect(actual).toEqual([
-      expect.objectContaining({
-        name: "checkRunName",
-        status: "completed",
-        conclusion: "success",
-      }),
-    ]);
-  });
-
-  it("returns null when no check matches", async () => {
-    const githubMock = createMockGithub();
-    githubMock.rest.checks.listForRef = vi.fn().mockResolvedValue({
-      data: {
-        check_runs: [],
-      },
-    });
-
-    const actual = await getCheckRuns(
-      githubMock,
-      createMockContext(),
-      "checkRunName",
-      "head_sha",
-    );
-
-    expect(actual).toEqual([]);
-  });
-
-  it("throws when multiple checks match", async () => {
-    const githubMock = createMockGithub();
-    const earlierDate = "2025-04-01T00:00:00Z";
-    const laterDate = "2025-04-02T00:00:00Z";
-    githubMock.rest.checks.listForRef = vi.fn().mockResolvedValue({
-      data: {
-        check_runs: [
-          {
-            name: "checkRunName",
-            status: "completed",
-            conclusion: "success",
-            completed_at: earlierDate,
-          },
-          {
-            name: "checkRunName",
-            status: "completed",
-            conclusion: "success",
-            completed_at: laterDate,
-          },
-        ],
-      },
-    });
-
-    const actual = await await getCheckRuns(
-      githubMock,
-      createMockContext(),
-      "checkRunName",
-      "head_sha",
-    );
-
-    expect(actual).toEqual([
-      expect.objectContaining({
-        name: "checkRunName",
-        status: "completed",
-        conclusion: "success",
-        completed_at: laterDate,
-      }),
-      expect.objectContaining({
-        name: "checkRunName",
-        status: "completed",
-        conclusion: "success",
-        completed_at: earlierDate,
-      }),
-    ]);
-  });
+vi.mock("../src/github.js", () => {
+  return {
+    getCheckRuns: vi.fn().mockResolvedValue([]),
+    getWorkflowRuns: vi.fn().mockResolvedValue([]),
+    getCommitStatuses: vi.fn().mockResolvedValue([]),
+  };
 });
 
-describe("getWorkflowRuns", () => {
-  it("returns matching workflow_run", async () => {
-    const githubMock = createMockGithub();
-    githubMock.rest.actions.listWorkflowRunsForRepo = vi
-      .fn()
-      .mockResolvedValue({
-        data: {
-          workflow_runs: [
-            {
-              name: "workflowName",
-              status: "completed",
-              conclusion: "success",
-            },
-          ],
-        },
-      });
+/**
+ * @param {Object} params
+ * @param {import('@actions/github-script').AsyncFunctionArguments["github"]} params.github
+ * @param {Partial<import('@actions/github-script').AsyncFunctionArguments["context"]>} params.context
+ * @param {import('@actions/github-script').AsyncFunctionArguments["core"]} params.core
+ * @param {string} params.checkRunName
+ * @param {string} [params.commitStatusName]
+ * @param {string} [params.workflowName]
+ */
+export async function verifyRunStatusImpl({
+  github,
+  context,
+  core,
+  checkRunName,
+  commitStatusName,
+  workflowName,
+}) {
+  return verifyRunStatusImplSrc({
+    github,
+    context: /** @type {import('@actions/github-script').AsyncFunctionArguments["context"]} */ (
+      context
+    ),
+    core,
+    checkRunName,
+    commitStatusName,
+    workflowName,
+  });
+}
 
-    const actual = await getWorkflowRuns(
-      githubMock,
-      createMockContext(),
-      "workflowName",
-      "head_sha",
-    );
+describe("verifyRunStatusImpl", () => {
+  // Reset mock call history before each test
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
-    expect(actual).toEqual([
-      expect.objectContaining({
+  it("verifies status when check_run event fires", async () => {
+    const github = createMockGithub();
+    const { getWorkflowRuns } = await import("../src/github.js");
+    /** @type {import("vitest").Mock} */ (getWorkflowRuns).mockResolvedValue([
+      {
         name: "workflowName",
         status: "completed",
         conclusion: "success",
-      }),
-    ]);
-  });
-
-  it("returns null when no workflow matches", async () => {
-    const githubMock = createMockGithub();
-    githubMock.rest.actions.listWorkflowRunsForRepo = vi
-      .fn()
-      .mockResolvedValue({
-        data: {
-          workflow_runs: [
-            {
-              name: "otherWorkflowName",
-            },
-          ],
-        },
-      });
-
-    const actual = await getWorkflowRuns(
-      githubMock,
-      createMockContext(),
-      "workflowName",
-      "head_sha",
-    );
-
-    expect(actual).toEqual([]);
-  });
-
-  it("returns latest when multiple workflows match", async () => {
-    const githubMock = createMockGithub();
-    const earlyDate = "2025-04-01T00:00:00Z";
-    const laterDate = "2025-04-02T00:00:00Z";
-    githubMock.rest.actions.listWorkflowRunsForRepo = vi
-      .fn()
-      .mockResolvedValue({
-        data: {
-          workflow_runs: [
-            {
-              name: "workflowName",
-              status: "completed",
-              conclusion: "success",
-              updated_at: earlyDate,
-            },
-            {
-              name: "workflowName",
-              status: "completed",
-              conclusion: "success",
-              updated_at: laterDate,
-            },
-          ],
-        },
-      });
-
-    const actual = await getWorkflowRuns(
-      githubMock,
-      createMockContext(),
-      "workflowName",
-      "head_sha",
-    );
-
-    expect(actual).toEqual([
-      expect.objectContaining({
-        updated_at: laterDate,
-      }),
-      expect.objectContaining({
-        updated_at: earlyDate,
-      }),
-    ]);
-  });
-});
-
-describe("verifyRunStatusImpl", () => {
-  it("verifies status when check_run event fires", async () => {
-    const github = createMockGithub();
-    github.rest.actions.listWorkflowRunsForRepo = vi.fn().mockResolvedValue({
-      data: {
-        workflow_runs: [
-          {
-            name: "workflowName",
-            status: "completed",
-            conclusion: "success",
-          },
-        ],
       },
-    });
-
+    ]);
     const context = {
       eventName: "check_run",
       payload: {
@@ -260,7 +93,7 @@ describe("verifyRunStatusImpl", () => {
 
   it("verifies status when workflow_run event fires", async () => {
     const github = createMockGithub();
-    github.rest.checks.listForRef = vi.fn().mockResolvedValue({
+    github.rest.checks.listForRef.mockResolvedValue({
       data: {
         check_runs: [
           {
@@ -299,7 +132,7 @@ describe("verifyRunStatusImpl", () => {
 
   it("returns early during workflow_run event when no matching check_run is found", async () => {
     const github = createMockGithub();
-    github.rest.checks.listForRef = vi.fn().mockResolvedValue({
+    github.rest.checks.listForRef.mockResolvedValue({
       data: {
         check_runs: [],
       },
@@ -329,12 +162,8 @@ describe("verifyRunStatusImpl", () => {
   });
 
   it("returns early during check_run event when no matching workflow_run is found", async () => {
-    const github = createMockGithub();
-    github.rest.actions.listWorkflowRunsForRepo = vi.fn().mockResolvedValue({
-      data: {
-        workflow_runs: [],
-      },
-    });
+    const { getWorkflowRuns } = await import("../src/github.js");
+    /** @type {import("vitest").Mock} */ (getWorkflowRuns).mockResolvedValue([]);
 
     const context = {
       eventName: "check_run",
@@ -347,7 +176,7 @@ describe("verifyRunStatusImpl", () => {
     };
     const core = createMockCore();
     await verifyRunStatusImpl({
-      github,
+      github: createMockGithub(),
       context,
       core,
       checkRunName: "checkRunName",
@@ -384,18 +213,14 @@ describe("verifyRunStatusImpl", () => {
   });
 
   it("throws if check_run conclusion does not match workflow_run conclusion", async () => {
-    const github = createMockGithub();
-    github.rest.actions.listWorkflowRunsForRepo = vi.fn().mockResolvedValue({
-      data: {
-        workflow_runs: [
-          {
-            name: "workflowName",
-            status: "completed",
-            conclusion: "failure",
-          },
-        ],
+    const { getWorkflowRuns } = await import("../src/github.js");
+    /** @type {import("vitest").Mock} */ (getWorkflowRuns).mockResolvedValue([
+      {
+        name: "workflowName",
+        status: "completed",
+        conclusion: "failure",
       },
-    });
+    ]);
 
     const context = {
       eventName: "check_run",
@@ -408,7 +233,7 @@ describe("verifyRunStatusImpl", () => {
     };
     const core = createMockCore();
     await verifyRunStatusImpl({
-      github,
+      github: createMockGithub(),
       context,
       core,
       checkRunName: "checkRunName",
@@ -421,7 +246,7 @@ describe("verifyRunStatusImpl", () => {
 
   it("throws when in check_suite event but no check_run with name is found", async () => {
     const github = createMockGithub();
-    github.rest.checks.listForRef = vi.fn().mockResolvedValue({
+    github.rest.checks.listForRef.mockResolvedValue({
       data: {
         check_runs: [],
       },
@@ -447,6 +272,123 @@ describe("verifyRunStatusImpl", () => {
     });
     expect(core.setFailed).toHaveBeenCalledWith(
       "Could not locate check run checkRunName in check suite checkRunName. Ensure job is filtering by github.event.check_suite.app.name.",
+    );
+  });
+
+  it("fetches commit status from API when not status event", async () => {
+    const { getCheckRuns, getCommitStatuses } = await import("../src/github.js");
+    /** @type {import("vitest").Mock}*/ (getCheckRuns).mockResolvedValue([
+      {
+        name: "checkRunName",
+        conclusion: "success",
+        html_url: "https://example.com/check",
+      },
+    ]);
+    /** @type {import("vitest").Mock}*/ (getCommitStatuses).mockResolvedValue([
+      {
+        context: "commitStatusName",
+        state: "success",
+        target_url: "https://example.com/status",
+      },
+    ]);
+
+    const context = {
+      eventName: "workflow_run",
+      payload: {
+        workflow_run: {
+          name: "workflowName",
+          conclusion: "success",
+        },
+      },
+    };
+
+    const core = createMockCore();
+
+    await verifyRunStatusImpl({
+      github: createMockGithub(),
+      context,
+      core,
+      checkRunName: "checkRunName",
+      commitStatusName: "commitStatusName",
+      workflowName: "workflowName",
+    });
+
+    expect(core.setFailed).not.toHaveBeenCalled();
+    expect(core.notice).toHaveBeenCalledWith(
+      "Conclusions match for check run checkRunName and commit status commitStatusName",
+    );
+  });
+
+  it("handles API error when fetching commit status", async () => {
+    const { getCheckRuns, getCommitStatuses } = await import("../src/github.js");
+    /** @type {import("vitest").Mock}*/ (getCheckRuns).mockResolvedValue([
+      {
+        name: "checkRunName",
+        conclusion: "success",
+        html_url: "https://example.com/check",
+      },
+    ]);
+    /** @type {import("vitest").Mock}*/ (getCommitStatuses).mockRejectedValue(
+      new Error("API Error"),
+    );
+
+    const context = {
+      eventName: "workflow_run",
+      payload: {
+        workflow_run: {
+          name: "workflowName",
+          conclusion: "success",
+        },
+      },
+    };
+
+    const core = createMockCore();
+
+    await verifyRunStatusImpl({
+      github: createMockGithub(),
+      context,
+      core,
+      checkRunName: "checkRunName",
+      commitStatusName: "commitStatusName",
+      workflowName: "workflowName",
+    });
+
+    expect(core.setFailed).toHaveBeenCalledWith("Failed to fetch commit status: API Error");
+  });
+
+  it("verifies neutral check run matches success workflow run", async () => {
+    const { getCheckRuns } = await import("../src/github.js");
+    /** @type {import("vitest").Mock}*/ (getCheckRuns).mockResolvedValue([
+      {
+        name: "checkRunName",
+        conclusion: "neutral",
+        html_url: "https://example.com/check",
+      },
+    ]);
+
+    const context = {
+      eventName: "workflow_run",
+      payload: {
+        workflow_run: {
+          name: "workflowName",
+          conclusion: "success",
+        },
+      },
+    };
+
+    const core = createMockCore();
+
+    await verifyRunStatusImpl({
+      github: createMockGithub(),
+      context,
+      core,
+      checkRunName: "checkRunName",
+      workflowName: "workflowName",
+    });
+
+    expect(core.setFailed).not.toHaveBeenCalled();
+    expect(core.notice).toHaveBeenCalledWith(
+      "Conclusions match for check run checkRunName and workflow run workflowName",
     );
   });
 });

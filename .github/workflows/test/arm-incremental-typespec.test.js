@@ -16,10 +16,19 @@ import {
   swaggerHandWritten,
   swaggerTypeSpecGenerated,
 } from "../../shared/test/examples.js";
-import incrementalTypeSpec from "../src/arm-incremental-typespec.js";
+import incrementalTypeSpecImpl from "../src/arm-incremental-typespec.js";
 import { createMockCore } from "./mocks.js";
 
 const core = createMockCore();
+
+/**
+ * @param {unknown} asyncFunctionArgs
+ */
+function incrementalTypeSpec(asyncFunctionArgs) {
+  return incrementalTypeSpecImpl(
+    /** @type {import("@actions/github-script").AsyncFunctionArguments} */ (asyncFunctionArgs),
+  );
+}
 
 describe("incrementalTypeSpec", () => {
   afterEach(() => {
@@ -42,9 +51,7 @@ describe("incrementalTypeSpec", () => {
 
     vi.spyOn(changedFiles, "getChangedFiles").mockResolvedValue([swaggerPath]);
 
-    const showSpy = vi
-      .mocked(simpleGit.simpleGit().show)
-      .mockResolvedValue(swaggerHandWritten);
+    const showSpy = vi.mocked(simpleGit.simpleGit().show).mockResolvedValue(swaggerHandWritten);
 
     await expect(incrementalTypeSpec({ core })).resolves.toBe(false);
 
@@ -52,8 +59,7 @@ describe("incrementalTypeSpec", () => {
   });
 
   it("returns false if changed files add a new RP", async () => {
-    const specDir =
-      "specification/contosowidgetmanager/resource-manager/Microsoft.Contoso";
+    const specDir = "specification/contosowidgetmanager/resource-manager/Microsoft.Contoso";
     const swaggerPath = `${specDir}/preview/2021-10-01-preview/contoso.json`;
 
     vi.spyOn(changedFiles, "getChangedFiles").mockResolvedValue([swaggerPath]);
@@ -69,13 +75,7 @@ describe("incrementalTypeSpec", () => {
 
     expect(showSpy).toBeCalledWith([`HEAD:${swaggerPath}`]);
 
-    expect(rawSpy).toBeCalledWith([
-      "ls-tree",
-      "-r",
-      "--name-only",
-      "HEAD^",
-      specDir,
-    ]);
+    expect(rawSpy).toBeCalledWith(["ls-tree", "-r", "--name-only", "HEAD^", specDir]);
   });
 
   it("returns false if swagger deleted", async () => {
@@ -86,9 +86,7 @@ describe("incrementalTypeSpec", () => {
 
     const showSpy = vi
       .mocked(simpleGit.simpleGit().show)
-      .mockRejectedValue(
-        new Error("path contoso.json does not exist in 'HEAD'"),
-      );
+      .mockRejectedValue(new Error("path contoso.json does not exist in 'HEAD'"));
 
     await expect(incrementalTypeSpec({ core })).resolves.toBe(false);
 
@@ -96,8 +94,7 @@ describe("incrementalTypeSpec", () => {
   });
 
   it("returns false if readme deleted", async () => {
-    const readmePath =
-      "specification/contosowidgetmanager/resource-manager/readme.md";
+    const readmePath = "specification/contosowidgetmanager/resource-manager/readme.md";
 
     vi.spyOn(changedFiles, "getChangedFiles").mockResolvedValue([readmePath]);
 
@@ -111,8 +108,7 @@ describe("incrementalTypeSpec", () => {
   });
 
   it("returns false if readme contains no input-files", async () => {
-    const readmePath =
-      "specification/contosowidgetmanager/resource-manager/readme.md";
+    const readmePath = "specification/contosowidgetmanager/resource-manager/readme.md";
 
     vi.spyOn(changedFiles, "getChangedFiles").mockResolvedValue([readmePath]);
 
@@ -129,9 +125,7 @@ describe("incrementalTypeSpec", () => {
 
     vi.spyOn(changedFiles, "getChangedFiles").mockResolvedValue([swaggerPath]);
 
-    const showSpy = vi
-      .mocked(simpleGit.simpleGit().show)
-      .mockResolvedValue("not } valid { json");
+    const showSpy = vi.mocked(simpleGit.simpleGit().show).mockResolvedValue("not } valid { json");
 
     await expect(incrementalTypeSpec({ core })).resolves.toBe(false);
 
@@ -139,36 +133,44 @@ describe("incrementalTypeSpec", () => {
   });
 
   it("returns false if tsp conversion", async () => {
-    const specDir =
-      "specification/contosowidgetmanager/resource-manager/Microsoft.Contoso";
+    const specDir = "specification/contosowidgetmanager/resource-manager/Microsoft.Contoso";
     const swaggerPath = `${specDir}/preview/2021-10-01-preview/contoso.json`;
 
     vi.spyOn(changedFiles, "getChangedFiles").mockResolvedValue([swaggerPath]);
 
     const showSpy = vi
       .mocked(simpleGit.simpleGit().show)
-      .mockImplementation(async ([treePath]) =>
-        treePath.split(":")[0] == "HEAD"
-          ? swaggerTypeSpecGenerated
-          : swaggerHandWritten,
+      .mockImplementation(
+        (
+          /** @type {import("simple-git").SimpleGitTaskCallback|string|string[]|undefined} */ optionsOrCallback,
+        ) => {
+          /** @type {string} */
+          let option;
+
+          if (Array.isArray(optionsOrCallback)) {
+            option = optionsOrCallback[0];
+          } else if (typeof optionsOrCallback === "string") {
+            option = optionsOrCallback;
+          } else {
+            throw new Error(`Unexpected argument: ${optionsOrCallback}`);
+          }
+
+          return /** @type {import("simple-git").Response<string>} */ (
+            Promise.resolve(
+              option?.split(":")[0] == "HEAD" ? swaggerTypeSpecGenerated : swaggerHandWritten,
+            )
+          );
+        },
       );
 
-    const lsTreeSpy = vi
-      .mocked(simpleGit.simpleGit().raw)
-      .mockResolvedValue(swaggerPath);
+    const lsTreeSpy = vi.mocked(simpleGit.simpleGit().raw).mockResolvedValue(swaggerPath);
 
     await expect(incrementalTypeSpec({ core })).resolves.toBe(false);
 
     expect(showSpy).toHaveBeenCalledWith([`HEAD:${swaggerPath}`]);
     expect(showSpy).toHaveBeenCalledWith([`HEAD^:${swaggerPath}`]);
 
-    expect(lsTreeSpy).toBeCalledWith([
-      "ls-tree",
-      "-r",
-      "--name-only",
-      "HEAD^",
-      specDir,
-    ]);
+    expect(lsTreeSpy).toBeCalledWith(["ls-tree", "-r", "--name-only", "HEAD^", specDir]);
   });
 
   it("throws if git show for swagger returns unknown error", async () => {
@@ -177,9 +179,7 @@ describe("incrementalTypeSpec", () => {
 
     vi.spyOn(changedFiles, "getChangedFiles").mockResolvedValue([swaggerPath]);
 
-    const showSpy = vi
-      .mocked(simpleGit.simpleGit().show)
-      .mockRejectedValue("string error");
+    const showSpy = vi.mocked(simpleGit.simpleGit().show).mockRejectedValue("string error");
 
     await expect(incrementalTypeSpec({ core })).rejects.toThrowError();
 
@@ -187,14 +187,11 @@ describe("incrementalTypeSpec", () => {
   });
 
   it("throws if git show for readme returns unknown error", async () => {
-    const readmePath =
-      "specification/contosowidgetmanager/resource-manager/readme.md";
+    const readmePath = "specification/contosowidgetmanager/resource-manager/readme.md";
 
     vi.spyOn(changedFiles, "getChangedFiles").mockResolvedValue([readmePath]);
 
-    const showSpy = vi
-      .mocked(simpleGit.simpleGit().show)
-      .mockRejectedValue("string error");
+    const showSpy = vi.mocked(simpleGit.simpleGit().show).mockRejectedValue("string error");
 
     await expect(incrementalTypeSpec({ core })).rejects.toThrowError();
 
@@ -202,8 +199,7 @@ describe("incrementalTypeSpec", () => {
   });
 
   it("returns true if changed files are incremental changes to an existing TypeSpec RP swagger", async () => {
-    const specDir =
-      "specification/contosowidgetmanager/resource-manager/Microsoft.Contoso";
+    const specDir = "specification/contosowidgetmanager/resource-manager/Microsoft.Contoso";
     const swaggerPath = `${specDir}/preview/2021-10-01-preview/contoso.json`;
 
     vi.spyOn(changedFiles, "getChangedFiles").mockResolvedValue([swaggerPath]);
@@ -212,51 +208,58 @@ describe("incrementalTypeSpec", () => {
       .mocked(simpleGit.simpleGit().show)
       .mockResolvedValue(swaggerTypeSpecGenerated);
 
-    const lsTreeSpy = vi
-      .mocked(simpleGit.simpleGit().raw)
-      .mockResolvedValue(swaggerPath);
+    const lsTreeSpy = vi.mocked(simpleGit.simpleGit().raw).mockResolvedValue(swaggerPath);
 
     await expect(incrementalTypeSpec({ core })).resolves.toBe(true);
 
     expect(showSpy).toBeCalledWith([`HEAD:${swaggerPath}`]);
     expect(showSpy).toBeCalledWith([`HEAD^:${swaggerPath}`]);
 
-    expect(lsTreeSpy).toBeCalledWith([
-      "ls-tree",
-      "-r",
-      "--name-only",
-      "HEAD^",
-      specDir,
-    ]);
+    expect(lsTreeSpy).toBeCalledWith(["ls-tree", "-r", "--name-only", "HEAD^", specDir]);
   });
 
   it("returns true if changed files are incremental changes to an existing TypeSpec RP readme", async () => {
-    const specDir =
-      "specification/contosowidgetmanager/resource-manager/Microsoft.Contoso";
+    const specDir = "specification/contosowidgetmanager/resource-manager/Microsoft.Contoso";
 
     const swaggerPath = `${specDir}/preview/2021-10-01-preview/contoso.json`;
 
-    const readmePath =
-      "specification/contosowidgetmanager/resource-manager/readme.md";
+    const readmePath = "specification/contosowidgetmanager/resource-manager/readme.md";
 
     vi.spyOn(changedFiles, "getChangedFiles").mockResolvedValue([readmePath]);
 
     const showSpy = vi
       .mocked(simpleGit.simpleGit().show)
-      .mockImplementation(async ([treePath]) => {
-        const path = treePath.split(":")[1];
-        if (path === swaggerPath) {
-          return swaggerTypeSpecGenerated;
-        } else if (path === readmePath) {
-          return contosoReadme;
-        } else {
-          throw new Error("does not exist");
-        }
-      });
+      .mockImplementation(
+        (
+          /** @type {import("simple-git").SimpleGitTaskCallback|string|string[]|undefined} */ optionsOrCallback,
+        ) => {
+          /** @type {string} */
+          let option;
 
-    const lsTreeSpy = vi
-      .mocked(simpleGit.simpleGit().raw)
-      .mockResolvedValue(swaggerPath);
+          if (Array.isArray(optionsOrCallback)) {
+            option = optionsOrCallback[0];
+          } else if (typeof optionsOrCallback === "string") {
+            option = optionsOrCallback;
+          } else {
+            throw new Error(`Unexpected argument: ${optionsOrCallback}`);
+          }
+
+          const path = option.split(":")[1];
+          if (path === swaggerPath) {
+            return /** @type {import("simple-git").Response<string>} */ (
+              Promise.resolve(swaggerTypeSpecGenerated)
+            );
+          } else if (path === readmePath) {
+            return /** @type {import("simple-git").Response<string>} */ (
+              Promise.resolve(contosoReadme)
+            );
+          } else {
+            throw new Error("does not exist");
+          }
+        },
+      );
+
+    const lsTreeSpy = vi.mocked(simpleGit.simpleGit().raw).mockResolvedValue(swaggerPath);
 
     await expect(incrementalTypeSpec({ core })).resolves.toBe(true);
 
@@ -273,8 +276,7 @@ describe("incrementalTypeSpec", () => {
   });
 
   it("returns true if changed files are incremental changes to an existing TypeSpec RP example", async () => {
-    const specDir =
-      "specification/contosowidgetmanager/resource-manager/Microsoft.Contoso";
+    const specDir = "specification/contosowidgetmanager/resource-manager/Microsoft.Contoso";
     const swaggerPath = `${specDir}/preview/2021-10-01-preview/contoso.json`;
     const examplesPath =
       "specification/contosowidgetmanager/resource-manager/Microsoft.Contoso/preview/2021-10-01-preview/examples/Employees_Get.json";
@@ -285,20 +287,12 @@ describe("incrementalTypeSpec", () => {
       .mocked(simpleGit.simpleGit().show)
       .mockResolvedValue(swaggerTypeSpecGenerated);
 
-    const lsTreeSpy = vi
-      .mocked(simpleGit.simpleGit().raw)
-      .mockResolvedValue(swaggerPath);
+    const lsTreeSpy = vi.mocked(simpleGit.simpleGit().raw).mockResolvedValue(swaggerPath);
 
     await expect(incrementalTypeSpec({ core })).resolves.toBe(true);
 
     expect(showSpy).toBeCalledWith([`HEAD^:${swaggerPath}`]);
 
-    expect(lsTreeSpy).toHaveBeenCalledWith([
-      "ls-tree",
-      "-r",
-      "--name-only",
-      "HEAD^",
-      specDir,
-    ]);
+    expect(lsTreeSpy).toHaveBeenCalledWith(["ls-tree", "-r", "--name-only", "HEAD^", specDir]);
   });
 });
